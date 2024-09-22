@@ -11,7 +11,7 @@ const isValidEmail = (email) => {
 
 const generateRandomEmail = (isValid = true) => {
   const username = faker.internet.userName();
-  const domain = isValid ? "example.com" : `invalid${faker.random.alphaNumeric()}domain.com`;
+    let domain = isValid ? "example.com" : `inva${faker.string.alphanumeric(3)}li${faker.string.symbol(2)}.com`;
   const email = `${username}@${domain}`;
 
   if (!isValidEmail(email)) {
@@ -24,21 +24,54 @@ const generateRandomEmail = (isValid = true) => {
 
 const generateRandomPassword = (isValid = true) => {
   if (isValid) {
-    return faker.internet.password(14, true, /^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[@$!%*?&])[A-Za-z\d@$!%*?&]{14,}$/);
-  } else {
-    return faker.string.alphanumeric(14).toLowerCase();
-  }
-  
-};
+    const lowercase = 'abcdefghijklmnopqrstuvwxyz';
+    const uppercase = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ';
+    const numbers = '0123456789';
+    const symbols = '@$!%*?&';
+    const allChars = lowercase + uppercase + numbers + symbols;
 
-const isValidPassword = (password) => {
-  return /^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[@$!%*?&])[A-Za-z\d@$!%*?&]{12,}$/.test(password);
+    let password = '';
+    password += faker.helpers.arrayElement(lowercase);
+    password += faker.helpers.arrayElement(uppercase);
+    password += faker.helpers.arrayElement(numbers);
+    password += faker.helpers.arrayElement(symbols);
+
+    for (let i = password.length; i < 14; i++) {
+      password += faker.helpers.arrayElement(allChars);
+    }
+
+    return faker.helpers.shuffle(password.split('')).join('');
+  } else {
+    // Generar una contraseña inválida (sin mayúsculas)
+    return 'a'.repeat(14);
+  }
 };
 
 const setupBrowser = async () => {
   return await puppeteer.launch({ headless: false });
 };
 
+const checkInputError = async (page, inputName) => {
+  try {
+    // Buscar el div padre del input
+    const inputGroup = await page.$(`div.input-group input[name="${inputName}"]`);
+
+    if (inputGroup) {
+      // Usar el input como referencia y buscar el span hermano que contiene el error
+      const errorSpan = await page.$(`div.input-group input[name="${inputName}"] ~ span.label-error`);
+
+      if (errorSpan) {
+        return await page.evaluate(el => el.textContent, errorSpan);
+      }
+    }
+    return null;
+  } catch (error) {
+    console.error(`Error al buscar el error del input ${inputName}:`, error);
+    return null;
+  }
+};
+
+// Test para crear usuario
 const testCreateUser = async (fullname, email, password) => {
   const browser = await setupBrowser();
   try {
@@ -48,33 +81,33 @@ const testCreateUser = async (fullname, email, password) => {
 
     const registerButton = await page.waitForSelector('a[href="/signup"]');
     await registerButton.click();
-    console.log("Botón de registro encontrado y fue clickeado.");
+    console.log("Botón de registro encontrado y clickeado.");
 
+    // Espera que aparezcan los campos de entrada
     await page.waitForSelector('#fullname');
 
-    // Llenando campos de registro
+    // Introduce los datos
     await page.type('input[name="fullname"]', fullname);
     await page.type('input[name="email"]', email);
     await page.type('input[name="password"]', password);
     console.log("Campos de registro llenados");
 
+    // Enviar formulario
     await page.click('.auth-button');
     console.log("Formulario enviado");
 
-    // Verificar errores en los campos de entrada
+    // Verificar errores en los campos de correo y contraseña
     const emailError = await checkInputError(page, 'email');
     const passwordError = await checkInputError(page, 'password');
 
     if (emailError) {
-      console.log(`Test Passed: Error de correo electrónico detectado: ${emailError}`);
-      return;
+      console.log(`Test Passed: Error en el campo de correo: ${emailError}`);
     }
     if (passwordError) {
-      console.log(`Test Passed: Error de contraseña detectado: ${passwordError}`);
-      return;
+      console.log(`Test Passed: Error en el campo de contraseña: ${passwordError}`);
     }
 
-    // Verificación de notificación
+    // Verifica si existe un mensaje de éxito o error (como notificación)
     try {
       const notification = await page.waitForSelector('.toast-error, .toast-success', { timeout: 10000 });
       const notificationText = await notification.evaluate(el => el.textContent);
@@ -82,7 +115,7 @@ const testCreateUser = async (fullname, email, password) => {
       if (notificationText.includes("Email is already in use")) {
         console.log("Test Passed: Mensaje de error encontrado; el usuario ya existe.");
       } else if (notificationText.toLowerCase().includes("successfully")) {
-        console.log("Test Passed: Notificación de registro exitoso encontrada.");
+        console.log("Test Passed: Registro exitoso.");
         if (await checkSignOutPresent(page)) {
           console.log("Test Passed: Sign Out presente, confirmando inicio de sesión exitoso.");
         } else {
@@ -98,15 +131,6 @@ const testCreateUser = async (fullname, email, password) => {
     console.log(`Error al ejecutar el test de creación de usuario: ${error}`);
   } finally {
     await browser.close();
-  }
-};
-
-const checkInputError = async (page, inputName) => {
-  try {
-    const errorSpan = await page.$(`input[name="${inputName}"] ~ span.label-input.label-error`);
-    return errorSpan ? await errorSpan.evaluate(el => el.textContent) : null;
-  } catch {
-    return null;
   }
 };
 
@@ -137,8 +161,8 @@ const runTests = async () => {
   await testCreateUser(fullname, "testuser@example.com", password);
   console.log("                         ");
 
-  // Test con correo inválido
-  const invalidEmail = "invalid_email@example!!!.com";
+  // Test con correo inválido (caracteres especiales en el dominio)
+  const invalidEmail = generateRandomEmail(false);
   console.log(`Probando con correo inválido: ${invalidEmail}`);
   await testCreateUser(fullname, invalidEmail, password);
   console.log("                         ");
